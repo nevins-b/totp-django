@@ -1,0 +1,9 @@
+Django
+pyotp
+pycrypto
+MySQL-python
+django-tastypie
+py-bcrypt
+passlib
+qrcode
+Pillow
