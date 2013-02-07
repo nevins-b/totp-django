@@ -2,9 +2,8 @@ from django.db import models
 from django.db.models import F
 from django.conf import settings
 import GA
-import base64, os, time 
-import qrcode
-from StringIO import StringIO
+import base64, time, hashlib 
+from Crypto import Random
 
 # Create your models here.
 class User(models.Model):
@@ -15,13 +14,48 @@ class User(models.Model):
 		if not Secret.objects.filter(userid=self).exists():
 			self.get_secret()
 			self.get_scratch_tokens()
+	def delete(self,*args, **kwargs):
+		s = Secret.objects.filter(userid=self)
+		if s.exists():
+			for i in s.all():
+				i.delete()
+		st = ScratchToken.objects.filter(userid=self)
+		if st.exists():
+			for s in st.all():
+				st.delete()
+		t = Timestamp.objects.filter(userid=self)
+		if t.exists():
+			for i in t.all():
+				t.delete()
+		p = ProvisioningKey.objects.filter(userid=self)
+		if p.exists:
+			for i in p.all():
+				i.delete()
+		super(User,self).delete(*args,**kwargs)
+	def has_secret(self):
+		return Secret.objects.filter(userid=self).exists()
 
+	def get_provisioning_key(self):
+		pr_key, created = ProvisioningKey.objects.get_or_create(userid=self)
+		return pr_key	
+
+	def verify_provisioning_key(self,key):
+		qs = ProvisioningKey.objects.filter(userid=self)
+		if qs.exists():
+			pr_key = qs.get(userid=self)
+			if pr_key.expires < int(time.time()):
+				return False
+			if pr_key.key == key:
+				return True
+		return False
+		
 	def get_secret(self):
-		if not Secret.objects.filter(userid=self).exists():
+		if not self.has_secret():
 			good_chars = base64._b32alphabet.values()
                         secret = ''
+			rng = Random.new()
                         while len(secret) < 16:
-                                rchar = os.urandom(1)
+                                rchar = rng.get_random_bytes(1) 
                                 if rchar in good_chars:
                                         secret += rchar
                         Secret.objects.create(
@@ -37,8 +71,9 @@ class User(models.Model):
 			good_chars = '0123456789'
                         for i in xrange(settings.SCRATCH_TOKENS):
                                 scratch_token = ''
+				rng = Random.new()
                                 while len(scratch_token) < 8:
-                                        rchar = os.urandom(1)
+					rchar = rng.get_random_bytes(1)
                                         if rchar in good_chars:
                                                 scratch_token += rchar
                                 ScratchToken.objects.create(userid=self,used=False,token=scratch_token)
@@ -93,7 +128,7 @@ class User(models.Model):
 					else:
 						success = (False, 'Not a valid token')
 						if secret.window_size > 0:
-							# Possible issue here that if a valid token is found all previous ones are marked as used?
+							# Possible issue here that if a valid token is found should previous ones are marked as used?
 							start = secret.timestamp - ( secret.window_size * 10 )
 							end   = secret.timestamp + ( secret.window_size * 10 ) + 1
 							for timestamp in xrange(start, end, 10):
@@ -106,7 +141,7 @@ class User(models.Model):
 				if success[0] == True:
 					Timestamp.objects.create(userid=self,timestamp=used_timestamp,success=True)
 				else:
-					for ts in xrange(used_timestamp, used_timestamp-(secret.window_size*10), -30):
+					for ts in xrange(used_timestamp, used_timestamp - (secret.window_size * 10), -30):
 						Timestamp.objects.create(userid=self,timestamp=ts,success=False)
 		return success
 							
@@ -140,3 +175,15 @@ class ScratchToken(models.Model):
 	userid = models.ForeignKey('User')	
 	token = models.IntegerField()
 	used = models.BooleanField(default=False)
+
+class ProvisioningKey(models.Model):
+	userid = models.ForeignKey('User',unique=True)
+	key = models.CharField(max_length=128,unique=True)	
+	expires = models.IntegerField()
+	def save(self,*args, **kwargs):
+		if not self.id:
+			rng = Random.new()
+			self.key = hashlib.sha1(rng.get_random_bytes(64)).hexdigest() 
+			self.expires = int(time.time()) + 600
+                super(ProvisioningKey, self).save(*args, **kwargs)	
+			

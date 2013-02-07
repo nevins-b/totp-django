@@ -14,6 +14,9 @@ urlpatterns = patterns('',
 
     # Uncomment the next line to enable the admin:
     url(r'^admin/', include(admin.site.urls)),
-    url(r'^verify_user/', 'otp.views.verify_user'),
-    url(r'^verify_token/', 'otp.views.verify_token'),
+    url(r'^verify/user/', 'otp.views.verify_user'),
+    url(r'^verify/token/', 'otp.views.verify_token'),
+    url(r'^provision/user/', 'otp.views.provision_user'),
+    url(r'^provision/secret/', 'otp.views.provision_secret'),
+    url(r'^provision/scratch/', 'otp.views.provision_scratch'),
 )
